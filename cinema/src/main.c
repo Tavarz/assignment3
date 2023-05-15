@@ -1,22 +1,22 @@
+/*
+ * Copyright (c) 2016 Open-RnD Sp. z o.o.
+ * Copyright (c) 2020 Nordic Semiconductor ASA
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <zephyr.h>
+#include <device.h>
+#include <devicetree.h>
+#include <drivers/gpio.h>
+#include <sys/util.h>
+#include <sys/printk.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
-#include <zephyr/kernel.h>
-#include <zephyr/device.h>
-#include <zephyr/devicetree.h>
-#include <zephyr/driver/gpio.h>
-#include <zephyr/sys/printk.h>      /* for printk()*/
+#include <kernel.h>
 
 #define SLEEP_TIME_MS 60*1000
-#define LED1_NODE DT_NODELABEL(led1)
-#define SW0_NODE DT_NODELABEL(button0)
-#define SW1_NODE DT_NODELABEL(button1)
-#define SW2_NODE DT_NODELABEL(button2)
-#define SW3_NODE DT_NODELABEL(button3)  //botoes da placa 1,2,3,4
-#define SW4_NODE DT_NODELABEL(button4)  //botoes fora da placa
-#define SW5_NODE DT_NODELABEL(button5)
-#define SW6_NODE DT_NODELABEL(button6)
-#define SW7_NODE DT_NODELABEL(button7)
-
 
 #define MAX_SESSIONS 3
 #define MAX_MOVIES 2
@@ -27,6 +27,17 @@
 #define h_21 1
 #define h_23 2
 
+const uint8_t buttons_pins[] = {11,12,24,25,3,4,28,29}; /*Vector with pins where buttons are connected*/
+/* Get node ID for GPI0, which has buttons*/
+#define GPIO0_NODE DT_NODELABEL(gpio0)
+#define LED1_PIN 13
+
+/* Now get the device pointer for GPIO0 */
+static const struct device * gpio0_dev = DEVICE_DT_GET(GPIO0_NODE);
+
+/* It defines which pin triggers the callback and the address of the function */
+static struct gpio_callback button_cb_data;
+
 volatile int But1 = 0;      // UP
 volatile int But2 = 0;      //DOWN
 volatile int But3 = 0;      //SELECT
@@ -35,57 +46,6 @@ volatile int But5 = 0;      //1 euro
 volatile int But6 = 0;      //2 euros
 volatile int But7 = 0;      //5 euros
 volatile int But8 = 0;      //10 euros
-
-static struct gpio_callback button_cb_data;
-static const struct gpio_dt_spec led1 = GPIO_DT_SPEC_GET(LED1_NODE, gpios);
-static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET(SW0_NODE, gpios);
-
-void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
-    gpio_pin_toggle_dt(&led1);
-}
-
-void config(void) {
-    if (!device_is_ready(led1.port)) {
-		printk("Error: led1 device %s is not ready\n", led1.port->name);
-		return;
-	}
-
-	if (!device_is_ready(button.port)) {
-		printk("Error: button device %s is not ready\n", button.port->name);
-		return;
-	}
-    int ret = 0;
-
-    /* Configure the GPIO pins - led for output and button for input
-	 * Use internal pull-up to avoid the need for an external resitor (button)
-	 */
-	ret = gpio_pin_configure_dt(&led1, GPIO_OUTPUT_ACTIVE);
-	if (ret < 0) {
-		printk("Error: gpio_pin_configure_dt failed for led1, error:%d", ret);
-		return;
-	}
-
-    ret = gpio_pin_configure_dt(&button, GPIO_INPUT | GPIO_PULL_UP);
-	if (ret < 0) {
-		printk("Error: gpio_pin_configure_dt failed for button, error:%d", ret);
-		return;
-	}
-
-    /* Configure the interrupt on the button's pin */
-	ret = gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_TO_ACTIVE );
-	if (ret < 0) {
-		printk("Error: gpio_pin_interrupt_configure_dt failed for button, error:%d", ret);
-		return;
-	}
-
-    printk("All devices initialized sucesfully!\n\r");
-
-	/* Initialize the static struct gpio_callback variable   */
-    gpio_init_callback(&button_cb_data, button_pressed, BIT(button.pin));
-
-    /* Add the callback function by calling gpio_add_callback()   */
-	 gpio_add_callback(button.port, &button_cb_data);
-}
 
 void reset_Buttons(void) {
     But1 = 0;
@@ -98,6 +58,100 @@ void reset_Buttons(void) {
     But8 = 0;
 }
 
+void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
+    
+	/*int i = 0;
+	reset_Buttons();
+	for(i = 0; i < sizeof(buttons_pins); i++){
+
+		if(BIT(buttons_pins[i]) & pins){
+
+			Buttons[i] = BIT(buttons_pins[i]) & pins; //Teriamos que usar um array de butoes
+													  // em vez do que temos nas linhas 40
+		}
+
+	}*/
+
+	int i=0;
+
+    /* Toggle led1 */
+	gpio_pin_toggle(gpio0_dev,LED1_PIN);
+
+	/* Identify the button(s) that was(ere) hit*/
+	for(i=0; i<sizeof(buttons_pins); i++){		
+		if(BIT(buttons_pins[i]) & pins) {
+			printk("Button %d pressed\n\r",i+1);
+		}
+	}
+
+}
+
+void config(void) {
+    
+	int ret, i;
+	uint32_t pinmask = 0; /* Mask for setting the pins that shall generate interrupts */
+	
+	/* Welcome message */
+	printk("Digital IO accessing IO pins not set via DT (external buttons in the case) \n\r");
+	printk("Hit buttons 1-8 (1...4 internal, 5-8 external connected to A0...A3). Led toggles and button ID printed at console \n\r");
+
+	/* Check if gpio0 device is ready */
+	if (!device_is_ready(gpio0_dev)) {
+		printk("Error: gpio0 device is not ready\n");
+		return;
+	} else {
+		printk("Success: gpio0 device is ready\n");
+	}
+
+    /* Configure the GPIO pins - LED1 for output and buttons 1-4 + IOPINS 2,4,28 and 29 for input
+	 * Use internal pull-up to avoid the need for an external resistor (buttons) */
+	ret = gpio_pin_configure(gpio0_dev,LED1_PIN, GPIO_OUTPUT_ACTIVE);
+	if (ret < 0) {
+		printk("Error: gpio_pin_configure failed for led1, error:%d\n\r", ret);
+		return;
+	}
+
+	for(i=0; i<sizeof(buttons_pins); i++) {
+		ret = gpio_pin_configure(gpio0_dev, buttons_pins[i], GPIO_INPUT | GPIO_PULL_UP);
+		if (ret < 0) {
+			printk("Error: gpio_pin_configure failed for button %d/pin %d, error:%d\n\r", i+1,buttons_pins[i], ret);
+			return;
+		} else {
+			printk("Success: gpio_pin_configure for button %d/pin %d\n\r", i+1,buttons_pins[i]);
+		}
+	}
+
+	/* Configure the interrupt on the button's pin */
+	for(i=0; i<sizeof(buttons_pins); i++) {
+		ret = gpio_pin_interrupt_configure(gpio0_dev, buttons_pins[i], GPIO_INT_EDGE_TO_ACTIVE );
+		if (ret < 0) {
+			printk("Error: gpio_pin_interrupt_configure failed for button %d / pin %d, error:%d", i+1, buttons_pins[i], ret);
+			return;
+		}
+	}
+
+    /* HW init done!*/
+	printk("All devices initialized sucesfully!\n\r");
+
+	/* Initialize the static struct gpio_callback variable   */
+	pinmask=0;
+	for(i=0; i<sizeof(buttons_pins); i++) {
+		pinmask |= BIT(buttons_pins[i]);
+	}
+    gpio_init_callback(&button_cb_data, button_pressed, pinmask); 	
+	
+	/* Add the callback function by calling gpio_add_callback()   */
+	gpio_add_callback(gpio0_dev, &button_cb_data);
+
+	/* 
+ 	 * The main loop
+ 	 */ 
+	while (1) {
+		/* Just sleep. Led on/off is done by the int callback */
+		k_msleep(SLEEP_TIME_MS);
+	}
+
+}
 
 void StateMachine(void) {
     struct session {
@@ -110,7 +164,7 @@ void StateMachine(void) {
         struct session sessions[MAX_SESSIONS];
     };
 
-    struct movie movies[MAX_MOVIES];
+    //struct movie movies[MAX_MOVIES];
 
     struct session movie_a[] = {
         {19,9},
