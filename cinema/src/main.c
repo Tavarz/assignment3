@@ -1,10 +1,14 @@
-/*
- * Copyright (c) 2016 Open-RnD Sp. z o.o.
- * Copyright (c) 2020 Nordic Semiconductor ASA
+/** @file main.c
+ * @brief main.c file brief decription 
  *
- * SPDX-License-Identifier: Apache-2.0
+ * Program that emulates a ticket vending machine for a cinema
+ * 
+ * @author Bernardo Tavares bernardot@ua.pt and João Rodrigues jpcr@ua.pt
+ * @date 15 May 2023
+ * @bug No known bugs.
  */
 
+/* Includes */
 #include <zephyr.h>
 #include <device.h>
 #include <devicetree.h>
@@ -16,21 +20,21 @@
 #include <string.h>
 #include <kernel.h>
 
-#define SLEEP_TIME_MS 60*1000
-
-#define MAX_SESSIONS 3
-#define MAX_MOVIES 2
-#define MOVIE_A 0
-#define MOVIE_B 1
-#define MENU 2
-#define h_19 0
+/* Defines */
+#define SLEEP_TIME_MS 300
+#define MAX_SESSIONS 3  // Maximum number of session for one movie
+#define MOVIE_A 0       // Movie A state
+#define MOVIE_B 1       // Movie B state
+#define MENU 2          // Menu state
+#define h_19 0          
 #define h_21 1
 #define h_23 2
 
-const uint8_t buttons_pins[] = {11,12,24,25,3,4,28,29}; /*Vector with pins where buttons are connected*/
 /* Get node ID for GPI0, which has buttons*/
 #define GPIO0_NODE DT_NODELABEL(gpio0)
 #define LED1_PIN 13
+
+const uint8_t buttons_pins[] = {11,12,24,25,3,4,28,29}; /*Vector with pins where buttons are connected*/
 
 /* Now get the device pointer for GPIO0 */
 static const struct device * gpio0_dev = DEVICE_DT_GET(GPIO0_NODE);
@@ -38,6 +42,7 @@ static const struct device * gpio0_dev = DEVICE_DT_GET(GPIO0_NODE);
 /* It defines which pin triggers the callback and the address of the function */
 static struct gpio_callback button_cb_data;
 
+/* Variables to use when a button is pressed */
 volatile int But1 = 0;      // UP
 volatile int But2 = 0;      //DOWN
 volatile int But3 = 0;      //SELECT
@@ -47,6 +52,7 @@ volatile int But6 = 0;      //2 euros
 volatile int But7 = 0;      //5 euros
 volatile int But8 = 0;      //10 euros
 
+/* Resets all the button states to not pressed */
 void reset_Buttons(void) {
     But1 = 0;
     But2 = 0;
@@ -57,21 +63,8 @@ void reset_Buttons(void) {
     But7 = 0;
     But8 = 0;
 }
-
+/* Interrupt function to detect if button is pressed and determine what button was pressed. LED1 switches state when a button is pressed */
 void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
-    
-	/*int i = 0;
-	reset_Buttons();
-	for(i = 0; i < sizeof(buttons_pins); i++){
-
-		if(BIT(buttons_pins[i]) & pins){
-
-			Buttons[i] = BIT(buttons_pins[i]) & pins; //Teriamos que usar um array de butoes
-													  // em vez do que temos nas linhas 40
-		}
-
-	}*/
-
 	int i=0;
 
     /* Toggle led1 */
@@ -80,12 +73,49 @@ void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t
 	/* Identify the button(s) that was(ere) hit*/
 	for(i=0; i<sizeof(buttons_pins); i++){		
 		if(BIT(buttons_pins[i]) & pins) {
-			printk("Button %d pressed\n\r",i+1);
+			//printk("Button %d pressed\n\r",i+1);
+            switch(i){
+                case(0):
+                    But1 = 1;       //Botao Up
+                break;
+
+                case(1):
+                    But2 = 1;       //Botao Down
+                break;
+
+                case(2):
+                    But3 = 1;       //Botao Select
+                break;
+
+                case(3):
+                    But4 = 1;       //Botao Return
+                break;
+
+                case(4):
+                    But5 = 1;       // 1 euro
+                break;
+
+                case(5):
+                    But6 = 1;       //2 euros
+                break;
+
+                case(6):
+                    But7 = 1;       //5 euros
+                break;
+
+                case(7):
+                    But8 = 1;       //10 euros
+                break;
+
+                default:
+                break;
+            }
 		}
 	}
 
 }
 
+/* Function to configure the buttons and the interruptions for the same. Configures also LED1*/
 void config(void) {
     
 	int ret, i;
@@ -143,28 +173,14 @@ void config(void) {
 	/* Add the callback function by calling gpio_add_callback()   */
 	gpio_add_callback(gpio0_dev, &button_cb_data);
 
-	/* 
- 	 * The main loop
- 	 */ 
-	while (1) {
-		/* Just sleep. Led on/off is done by the int callback */
-		k_msleep(SLEEP_TIME_MS);
-	}
-
 }
-
+/* Function wich handles the state machine and all the events/actions that happen inside it */
 void StateMachine(void) {
+    /* Structure to define hours and price for each session */
     struct session {
         int horas;
         int custo;
     };
-
-    struct movie {
-        int n_sessions;
-        struct session sessions[MAX_SESSIONS];
-    };
-
-    //struct movie movies[MAX_MOVIES];
 
     struct session movie_a[] = {
         {19,9},
@@ -176,11 +192,6 @@ void StateMachine(void) {
         {19,10},
         {21,12}
     };
-
-    struct movie movies[] = {
-        {3,movie_a},
-        {2,movie_b}
-    };
     
     int state = MENU;
     int saldo = 0;
@@ -188,38 +199,44 @@ void StateMachine(void) {
 
 
     while(1) {
+        k_msleep(SLEEP_TIME_MS);
         switch(state){
             case MENU:
+                printk("\033[2J\033[H");
                 if(select == 0) {   //menu filme A selecionado
-                    printf("------------------------Cinema 3000------------------------\n\n\r -> Filme A\n\n\r    Filme B\n\n\r Saldo:%d euros\n\n\n\r",saldo);
+                    printk("------------------------Cinema 3000------------------------\n\n\r -> Filme A\n\n\r    Filme B\n\n\r Saldo:%d euros\n\n\n\r",saldo);
                 }
                 if(select == 1) {   //menu filme B selecionado
-                    printf("------------------------Cinema 3000------------------------\n\n\r    Filme A\n\n\r -> Filme B\n\n\r Saldo:%d euros\n\n\n\r",saldo);
+                    printk("------------------------Cinema 3000------------------------\n\n\r    Filme A\n\n\r -> Filme B\n\n\r Saldo:%d euros\n\n\n\r",saldo);
                 }
+                                
                 if(But1) {          //UP mudar select
                     if(select == 1) {
-                        select--;
+                        select=0;
                     }
                     reset_Buttons();
                 }
                 if(But2) {          //DOWN mudar select
                     if(select == 0) {
-                        select++;
+                        select=1;
                     }
                     reset_Buttons();
                 }
                 if(But3) {          //Select
                     if(select == 0){
                         state = MOVIE_A;
+                        select = 0;
                     }else{
                         state = MOVIE_B;
+                        select = 0;
                     }
                     reset_Buttons();
                 }
                 if(But4) {          //Return 
-                    printf("%d euros devolvidos",saldo);
+                    printk("%d euros devolvidos",saldo);
                     saldo = 0;
                     reset_Buttons();
+                    k_msleep(SLEEP_TIME_MS*3);
                 }
                 if(But5) {          //1 euro
                     saldo++;
@@ -241,18 +258,18 @@ void StateMachine(void) {
             break;
 
             case MOVIE_A:
-            select = 0;
-                if(select == 0) {   //menu filme A selecionado
-                    printf("------------------------Cinema 3000------------------------\n\n\r  Filme A\n\n\r    Sessao : -> 19 horas\n\n\r                21 horas\n\n\r                23 horas\n\n\r                Voltar atras\n\n\r Saldo:%d euros\n\n\n\r",saldo);
+                printk("\033[2J\033[H");
+                if(select == 0) {   //movie A sessao 19 horas
+                    printk("------------------------Cinema 3000------------------------\n\n\r  Filme A\n\n\r    Sessao : -> 19 horas  %d euros\n\n\r                21 horas  %d euros\n\n\r                23 horas  %d euros\n\n\r                Voltar atras\n\n\r Saldo:%d euros\n\n\n\r",movie_a[h_19].custo,movie_a[h_21].custo,movie_a[h_23].custo,saldo);
                 }
-                if(select == 1) {   //menu filme B selecionado
-                    printf("------------------------Cinema 3000------------------------\n\n\r  Filme A\n\n\r    Sessao :    19 horas\n\n\r             -> 21 horas\n\n\r                23 horas\n\n\r                Voltar atras\n\n\r Saldo:%d euros\n\n\n\r",saldo);
+                if(select == 1) {   //movie A sessao 21 horas
+                    printk("------------------------Cinema 3000------------------------\n\n\r  Filme A\n\n\r    Sessao :    19 horas  %d euros\n\n\r             -> 21 horas  %d euros\n\n\r                23 horas  %d euros\n\n\r                Voltar atras\n\n\r Saldo:%d euros\n\n\n\r",movie_a[h_19].custo,movie_a[h_21].custo,movie_a[h_23].custo,saldo);
                 }
-                if(select == 2) {
-                    printf("------------------------Cinema 3000------------------------\n\n\r  Filme A\n\n\r    Sessao :    19 horas\n\n\r                21 horas\n\n\r             -> 23 horas\n\n\r                Voltar atras\n\n\r Saldo:%d euros\n\n\n\r",saldo);
+                if(select == 2) {   //movie A sessao 23 horas
+                    printk("------------------------Cinema 3000------------------------\n\n\r  Filme A\n\n\r    Sessao :    19 horas  %d euros\n\n\r                21 horas  %d euros\n\n\r             -> 23 horas  %d euros\n\n\r                Voltar atras\n\n\r Saldo:%d euros\n\n\n\r",movie_a[h_19].custo,movie_a[h_21].custo,movie_a[h_23].custo,saldo);
                 }
-                if(select == 3) {
-                    printf("------------------------Cinema 3000------------------------\n\n\r  Filme A\n\n\r    Sessao :    19 horas\n\n\r                21 horas\n\n\r                23 horas\n\n\r             -> Voltar atras\n\n\r Saldo:%d euros\n\n\n\r",saldo);
+                if(select == 3) {   //movie A voltar atras
+                    printk("------------------------Cinema 3000------------------------\n\n\r  Filme A\n\n\r    Sessao :    19 horas  %d euros\n\n\r                21 horas  %d euros\n\n\r                23 horas  %d euros\n\n\r             -> Voltar atras\n\n\r Saldo:%d euros\n\n\n\r",movie_a[h_19].custo,movie_a[h_21].custo,movie_a[h_23].custo,saldo);
                 }
                 if(But1) {          //UP mudar select
                     if((select == 1) || (select == 2) || (select == 3)) {
@@ -268,41 +285,49 @@ void StateMachine(void) {
                 }
                 if(But3) {          //Select
                     if(select == 0){
-                        if(saldo >= movies[MOVIE_A].sessions[h_19].custo){
-                            saldo -= movies[MOVIE_A].sessions[h_19].custo;
+                        if(saldo >= movie_a[h_19].custo){
+                            saldo -= movie_a[h_19].custo;
+                            state = 0;
                             state = MENU;
-                            printf("Bilhete comprado para Filme A as %d.\n\rSaldo:%d\n\n\r",movies[MOVIE_A].sessions[h_19].horas, saldo);
+                            printk("Bilhete comprado para Filme A as %d horas.\n\rSaldo:%d\n\n\r",movie_a[h_19].horas, saldo);
                         }else{
-                            printf("Saldo insuficiente. Inserir %d euros\n\n\r",(movies[MOVIE_A].sessions[h_19].custo-saldo));
+                            printk("Saldo insuficiente. Inserir %d euros\n\n\r",(movie_a[h_19].custo-saldo));
                         }
+                        k_msleep(SLEEP_TIME_MS*3);
                     }
                     if(select == 1){
-                        if(saldo >= movies[MOVIE_A].sessions[h_21].custo){
-                            saldo -= movies[MOVIE_A].sessions[h_21].custo;
+                        if(saldo >= movie_a[h_21].custo){
+                            saldo -= movie_a[h_21].custo;
+                            select = 0;
                             state = MENU;
-                            printf("Bilhete comprado para Filme A as %d.\n\rSaldo:%d\n\n\r",movies[MOVIE_A].sessions[h_21].horas, saldo);
+                            printk("Bilhete comprado para Filme A as %d horas.\n\rSaldo:%d\n\n\r",movie_a[h_21].horas, saldo);
                         }else{
-                            printf("Saldo insuficiente. Inserir %d euros\n\n\r",(movies[MOVIE_A].sessions[h_21].custo-saldo));
+                            printk("Saldo insuficiente. Inserir %d euros\n\n\r",(movie_a[h_21].custo-saldo));
                         }
+                        k_msleep(SLEEP_TIME_MS*3);
                     }
                     if(select == 2){
-                        if(saldo >= movies[MOVIE_A].sessions[h_23].custo){
-                            saldo -= movies[MOVIE_A].sessions[h_23].custo;
+                        if(saldo >= movie_a[h_23].custo){
+                            saldo -= movie_a[h_23].custo;
+                            select = 0;
                             state = MENU;
-                            printf("Bilhete comprado para Filme A as %d.\n\rSaldo:%d\n\n\r",movies[MOVIE_A].sessions[h_23].horas, saldo);
+                            printk("Bilhete comprado para Filme A as %d horas.\n\rSaldo:%d\n\n\r",movie_a[h_23].horas, saldo);
                         }else{
-                            printf("Saldo insuficiente. Inserir %d euros\n\n\r",(movies[MOVIE_A].sessions[h_23].custo-saldo));
+                            printk("Saldo insuficiente. Inserir %d euros\n\n\r",(movie_a[h_23].custo-saldo));
                         }
+                        k_msleep(SLEEP_TIME_MS*3);
                     }
                     if(select == 3){
+                        select = 0;
                         state = MENU;
                     }
                     reset_Buttons();
                 }
                 if(But4) {          //Return 
-                    printf("%d euros devolvidos",saldo);
+                    printk("%d euros devolvidos",saldo);
                     saldo = 0;
                     reset_Buttons();
+                    k_msleep(SLEEP_TIME_MS*3);
                 }
                 if(But5) {          //1 euro
                     saldo++;
@@ -323,15 +348,16 @@ void StateMachine(void) {
             break;
 
             case MOVIE_B:
-            select = 0;
-                if(select == 0) {   //menu filme A selecionado
-                    printf("------------------------Cinema 3000------------------------\n\n\r  Filme B\n\n\r    Sessao : -> 19 horas\n\n\r                21 horas\n\n\r                Voltar atras\n\n\r Saldo:%d euros\n\n\n\r",saldo);
+                
+                printk("\033[2J\033[H");
+                if(select == 0) {   //movie B sessao 19 horas
+                    printk("------------------------Cinema 3000------------------------\n\n\r  Filme B\n\n\r    Sessao : -> 19 horas  %d euros\n\n\r                21 horas  %d euros\n\n\r                Voltar atras\n\n\r Saldo:%d euros\n\n\n\r",movie_b[h_19].custo,movie_b[h_21].custo,saldo);
                 }
-                if(select == 1) {   //menu filme B selecionado
-                    printf("------------------------Cinema 3000------------------------\n\n\r  Filme B\n\n\r    Sessao :    19 horas\n\n\r             -> 21 horas\n\n\r                Voltar atras\n\n\r Saldo:%d euros\n\n\n\r",saldo);
+                if(select == 1) {   //movie B sessao 21 horas
+                    printk("------------------------Cinema 3000------------------------\n\n\r  Filme B\n\n\r    Sessao :    19 horas  %d euros\n\n\r             -> 21 horas  %d euros\n\n\r                Voltar atras\n\n\r Saldo:%d euros\n\n\n\r",movie_b[h_19].custo,movie_b[h_21].custo,saldo);
                 }
-                if(select == 2) {
-                    printf("------------------------Cinema 3000------------------------\n\n\r  Filme B\n\n\r    Sessao :    19 horas\n\n\r                21 horas\n\n\r             -> Voltar atras\n\n\r Saldo:%d euros\n\n\n\r",saldo);
+                if(select == 2) {   //movie B voltar
+                    printk("------------------------Cinema 3000------------------------\n\n\r  Filme B\n\n\r    Sessao :    19 horas  %d euros\n\n\r                21 horas  %d euros\n\n\r             -> Voltar atras\n\n\r Saldo:%d euros\n\n\n\r",movie_b[h_19].custo,movie_b[h_21].custo,saldo);
                 }
                 if(But1) {          //UP mudar select
                     if((select == 1) || (select == 2)) {
@@ -347,32 +373,38 @@ void StateMachine(void) {
                 }
                 if(But3) {          //Select
                     if(select == 0){
-                        if(saldo >= movies[MOVIE_A].sessions[h_19].custo){
-                            saldo -= movies[MOVIE_A].sessions[h_19].custo;
+                        if(saldo >= movie_b[h_19].custo){
+                            saldo -= movie_b[h_19].custo;
+                            select = 0;
                             state = MENU;
-                            printf("Bilhete comprado para Filme B as %d.\n\rSaldo:%d\n\n\r",movies[MOVIE_B].sessions[h_19].horas, saldo);
+                            printk("Bilhete comprado para Filme B as %d horas.\n\rSaldo:%d\n\n\r",movie_b[h_19].horas, saldo);
                         }else{
-                            printf("Saldo insuficiente. Inserir %d euros\n\n\r",(movies[MOVIE_B].sessions[h_19].custo-saldo));
+                            printk("Saldo insuficiente. Inserir %d euros\n\n\r",(movie_b[h_19].custo-saldo));
                         }
+                        k_msleep(SLEEP_TIME_MS*3);
                     }
                     if(select == 1){
-                        if(saldo >= movies[MOVIE_A].sessions[h_21].custo){
-                            saldo -= movies[MOVIE_A].sessions[h_21].custo;
+                        if(saldo >= movie_b[h_21].custo){
+                            saldo -= movie_b[h_21].custo;
+                            select = 0;
                             state = MENU;
-                            printf("Bilhete comprado para Filme B as %d.\n\rSaldo:%d\n\n\r",movies[MOVIE_B].sessions[h_21].horas, saldo);
+                            printk("Bilhete comprado para Filme B as %d horas.\n\rSaldo:%d\n\n\r",movie_b[h_21].horas, saldo);
                         }else{
-                            printf("Saldo insuficiente. Inserir %d euros\n\n\r",(movies[MOVIE_B].sessions[h_21].custo-saldo));
+                            printk("Saldo insuficiente. Inserir %d euros\n\n\r",(movie_b[h_21].custo-saldo));
                         }
+                        k_msleep(SLEEP_TIME_MS*3);
                     }
                     if(select == 2) {
+                        select = 0;
                         state = MENU;
                     }
                     reset_Buttons();
                 }
                 if(But4) {          //Return 
-                    printf("%d euros devolvidos",saldo);
+                    printk("%d euros devolvidos",saldo);
                     saldo = 0;
                     reset_Buttons();
+                    k_msleep(SLEEP_TIME_MS*3);
                 }
                 if(But5) {          //1 euro
                     saldo++;
@@ -399,7 +431,8 @@ void StateMachine(void) {
 }
 
 int main(void) {
-
+    config();
+    k_msleep(SLEEP_TIME_MS*10);
     StateMachine();
     return 0;
 }
