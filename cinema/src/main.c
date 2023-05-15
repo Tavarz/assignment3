@@ -52,7 +52,14 @@ volatile int But6 = 0;      //2 euros
 volatile int But7 = 0;      //5 euros
 volatile int But8 = 0;      //10 euros
 
-/* Resets all the button states to not pressed */
+/**
+ * @brief Brief decription of reset_Buttons().
+ *
+ * Resets all the button states to not pressed
+ * 
+ * @return Doesn't return anything
+ * 
+ */
 void reset_Buttons(void) {
     But1 = 0;
     But2 = 0;
@@ -63,7 +70,20 @@ void reset_Buttons(void) {
     But7 = 0;
     But8 = 0;
 }
-/* Interrupt function to detect if button is pressed and determine what button was pressed. LED1 switches state when a button is pressed */
+
+/**
+ * @brief Brief decription of button_pressed().
+ *
+ * Interrupt function to detect if a button is pressed and determine what button was pressed.
+ * LED1 switches state when a button is pressed
+ * 
+ * @param *dev  Pointer to the GPIO Device that triggered the callback
+ * @param *cb   Pointer to the gpio_callback structure that contains information about the callback function
+ * @param pins  Bitmask indicating which pins triggered the callback
+ * 
+ * @return Doesn't return anything
+ * 
+ */
 void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
 	int i=0;
 
@@ -115,7 +135,15 @@ void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t
 
 }
 
-/* Function to configure the buttons and the interruptions for the same. Configures also LED1*/
+/**
+ * @brief Brief decription of config().
+ *
+ * Function to configure the buttons and the interruptions for the same. 
+ * Also configures LED1
+ * 
+ * @return Doesn't return anything
+ * 
+ */
 void config(void) {
     
 	int ret, i;
@@ -174,7 +202,15 @@ void config(void) {
 	gpio_add_callback(gpio0_dev, &button_cb_data);
 
 }
-/* Function wich handles the state machine and all the events/actions that happen inside it */
+
+/**
+ * @brief Brief decription of StateMachine().
+ *
+ * Function which handles the state machine and all the events/actions that happen inside it
+ * 
+ * @return Doesn't return anything
+ * 
+ */
 void StateMachine(void) {
     /* Structure to define hours and price for each session */
     struct session {
@@ -430,6 +466,16 @@ void StateMachine(void) {
     }
 }
 
+/**
+ * @brief Brief decription of main().
+ *
+ * Function that calls the functions to initialize the buttons
+ * and starts the State Machine
+ * Main has no input arguments
+ * 
+ * @return main() always returns 0
+ * 
+ */
 int main(void) {
     config();
     k_msleep(SLEEP_TIME_MS*10);
